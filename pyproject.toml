@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonomous-quality-engineering-agent"
+version = "1.0.0"
+description = "Agentic AI system that selects the minimum high-value test set for a code change, executes it, performs evidence-based RCA and computes a deterministic release-confidence score with a quality-gate decision."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6",
+    "sqlalchemy>=2.0",
+    "httpx>=0.27",
+    "pytest>=8.0",
+]
+
+[project.optional-dependencies]
+graph = ["networkx>=3.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "tests_suite"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

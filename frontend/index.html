@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QE Release Confidence Agent</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --green: #3fb950; --red: #f85149; --yellow: #d29922;
+    --blue: #58a6ff; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+  header select { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; }
+  #banner { margin: 16px 24px 0; padding: 14px 20px; border-radius: 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+  #banner.allow { background: rgba(63,185,80,.12); color: var(--green); }
+  #banner.review { background: rgba(210,153,34,.12); color: var(--yellow); }
+  #banner.block { background: rgba(248,81,73,.12); color: var(--red); }
+  #banner button { background: transparent; color: inherit; border: 1px solid currentColor; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  main { padding: 16px 24px 32px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow: auto; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 10px; }
+  .s4 { grid-column: span 4; } .s6 { grid-column: span 6; } .s8 { grid-column: span 8; } .s12 { grid-column: span 12; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid rgba(48,54,61,.5); vertical-align: top; }
+  tr.clickable { cursor: pointer; } tr.clickable:hover { background: rgba(88,166,255,.08); }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .pill.pass { background: rgba(63,185,80,.15); color: var(--green); }
+  .pill.fail { background: rgba(248,81,73,.15); color: var(--red); }
+  .pill.warn { background: rgba(210,153,34,.18); color: var(--yellow); }
+  .pill.info { background: rgba(88,166,255,.15); color: var(--blue); }
+  .pill.mut { background: rgba(188,140,255,.15); color: var(--purple); }
+  .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .kpi { flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .kpi .v { font-size: 24px; font-weight: 700; }
+  .kpi .l { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .bar-wrap { background: var(--bg); border-radius: 6px; height: 12px; border: 1px solid var(--border); overflow: hidden; margin-top: 6px; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--green)); }
+  .gauge-box { display: flex; align-items: center; gap: 18px; }
+  .breakdown td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 180px; overflow: auto; font-size: 11px; color: var(--muted); }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; max-width: 720px; width: 90%; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .muted { color: var(--muted); } .small { font-size: 11px; }
+  textarea, input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: inherit; }
+  .row2 { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 8px; }
+  svg text { fill: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Autonomous QE &amp; Release Confidence Agent</h1>
+  <div>
+    <select id="changeSelect" onchange="loadChange(this.value)"><option value="">loading changes...</option></select>
+    <span id="workflowPill" class="pill info"></span>
+  </div>
+</header>
+<div id="banner"><span id="bannerText">No gate decision loaded.</span><span id="bannerActions"></span></div>
+<main>
+  <section class="s12"><h2>Release Overview</h2><div class="kpi-row" id="overviewKpis"></div></section>
+
+  <section class="s4"><h2>Change Risk</h2><div id="riskCard" class="muted">Submit or select a change.</div></section>
+
+  <section class="s4"><h2>Impacted Modules (closure)</h2><table id="impactTable"><thead><tr><th>Module</th><th>Reason</th></tr></thead><tbody></tbody></table></section>
+
+  <section class="s4"><h2>Coverage of Change</h2><div id="coverageCard"></div></section>
+
+  <section class="s6"><h2>Recommended Tests (priority order)</h2><table id="selTable"><thead><tr><th>Priority</th><th>Test</th><th>Type</th><th>Rationale</th></tr></thead><tbody></tbody></table></section>
+
+  <section class="s6"><h2>Execution Status</h2><table id="execTable"><thead><tr><th>Test</th><th>Outcome</th><th>Duration</th><th>Retried</th></tr></thead><tbody></tbody></table></section>
+
+  <section class="s6"><h2>Failures &rarr; RCA</h2><div id="failuresCard" class="muted">No failures recorded.</div></section>
+
+  <section class="s3"><h2>Release Confidence</h2><div class="gauge-box"><svg id="gauge" width="130" height="130" viewBox="0 0 120 120"></svg><div><div style="font-size:30px;font-weight:700" id="confScore">&ndash;</div><div class="muted small">weighted deduction model<br>allow &ge;85 &middot; review &ge;60 &middot; block &lt;60</div></div></div><table class="breakdown" id="confTable"><tbody></tbody></table></section>
+
+  <section class="s3"><h2>Flaky Tests</h2><table id="flakyTable"><thead><tr><th>Test</th><th>Classification</th><th>Conf.</th></tr></thead><tbody></tbody></table></section>
+
+  <section class="s6"><h2>Historical Trends (confidence by change)</h2><div id="trendsCard" class="muted small">No snapshots yet.</div></section>
+</main>
+
+<dialog id="overrideDialog">
+  <h2 style="color:var(--text)">Gate Override</h2>
+  <p class="muted small">Overrides are audited. Overriding a BLOCK decision requires a substantive justification (min 20 chars).</p>
+  <div class="row2"><input id="approver" placeholder="approver id"></div>
+  <textarea id="justification" rows="3" placeholder="justification"></textarea>
+  <div class="row2">
+    <button onclick="submitOverride('approve')" style="padding:8px;border-radius:6px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:600">Approve</button>
+    <button onclick="submitOverride('reject')" style="padding:8px;border-radius:6px;border:1px solid var(--red);background:transparent;color:var(--red);font-weight:600">Reject / Roll back</button>
+  </div>
+  <p class="small muted" id="overrideMsg"></p>
+</dialog>
+<dialog id="rcaDialog"><h2 id="rcaTitle"></h2><div id="rcaBody"></div>
+  <button onclick="document.getElementById('rcaDialog').close()" style="margin-top:10px;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text)">Close</button>
+</dialog>
+
+<script>
+const API = "/api/v1";
+let currentChange = null;
+
+async function j(url, opts) { const r = await fetch(url, opts); return { status: r.status, body: await r.json().catch(() => ({})) }; }
+
+async function loadChanges() {
+  const { body } = await j(API + "/changes");
+  const sel = document.getElementById("changeSelect");
+  sel.innerHTML = "<option value=''>select change...</option>" +
+    body.map(c => `<option value="${c.id}">#${c.id} ${c.title} (${c.workflow_state})</option>`).join("");
+}
+
+async function loadLatest() {
+  const { body } = await j(API + "/changes");
+  if (body.length) { document.getElementById("changeSelect").value = String(body[0].id); loadChange(body[0].id); }
+}
+
+async function loadChange(id) {
+  if (!id) return;
+  currentChange = id;
+  const { status, body } = await j(`${API}/changes/${id}/report`);
+  if (status !== 200) return;
+  renderAll(body);
+}
+
+function renderAll(report) {
+  renderBanner(report.gate);
+  renderOverview(report);
+  renderRisk(report);
+  renderImpact(report.impact);
+  renderCoverage(report.confidence);
+  renderSelection(report.selection);
+  renderExecution(report.execution);
+  renderFailures(report.failures);
+  renderConfidence(report.confidence);
+  renderFlaky(report.flaky);
+  loadTrends();
+}
+
+function renderBanner(gate) {
+  const b = document.getElementById("banner");
+  b.className = "";
+  document.getElementById("bannerActions").innerHTML = "";
+  if (!gate || gate.error || !gate.decision) {
+    b.classList.add("review");
+    document.getElementById("bannerText").textContent = "No quality-gate decision for this change yet.";
+    return;
+  }
+  b.classList.add(gate.decision);
+  document.getElementById("bannerText").textContent =
+    `QUALITY GATE: ${gate.decision.toUpperCase()}  |  confidence ${gate.score}  |  workflow ${gate.workflow_state}`;
+  const reasons = (gate.reasons || []).join(" · ");
+  b.title = reasons;
+  const wf = document.getElementById("workflowPill");
+  wf.textContent = gate.workflow_state;
+  if (gate.override_eligible) {
+    document.getElementById("bannerActions").innerHTML = `<button onclick="document.getElementById('overrideDialog').showModal()">Override...</button>`;
+  }
+}
+
+function renderOverview(r) {
+  const ex = r.execution || {}, cf = r.confidence || {}, g = r.gate || {}, s = r.selection || {};
+  const items = [
+    ["Executed", ex.total ?? "–"],
+    ["Passed", ex.passed ?? "–"],
+    ["Failed", ex.failed ?? "–"],
+    ["Suite reduction", s.reduction_pct != null ? s.reduction_pct + "%" : "–"],
+    ["Confidence", cf.score ?? "–"],
+    ["Decision", g.decision ? g.decision.toUpperCase() : "–"],
+  ];
+  document.getElementById("overviewKpis").innerHTML = items.map(([l, v]) =>
+    `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+}
+
+function renderRisk(r) {
+  const card = document.getElementById("riskCard");
+  const sel = r.selection;
+  if (!sel || sel.error) { card.textContent = "No selection data."; return; }
+  const risks = sel.selected ? [...sel.selected].sort((a,b) => (b.priority_score||0)-(a.priority_score||0)).slice(0, 4) : [];
+  card.innerHTML = `<table><thead><tr><th>Top risk test</th><th>Score</th></tr></thead><tbody>` +
+    risks.map(t => `<tr><td>${t.test_id}</td><td>${(t.priority_score||0).toFixed(1)}</td></tr>`).join("") +
+    `</tbody></table><p class="small muted">${sel.narrative || ""}</p>`;
+}
+
+function renderImpact(imp) {
+  const tb = document.querySelector("#impactTable tbody");
+  if (!imp || imp.error) { tb.innerHTML = ""; return; }
+  tb.innerHTML = (imp.impacted_modules || []).map(m =>
+    `<tr><td>${m.module.replace("sample_app.", "")}</td><td class="small muted">${m.reason}</td></tr>`).join("");
+}
+
+function renderCoverage(cf) {
+  const el = document.getElementById("coverageCard");
+  if (!cf || cf.error) { el.innerHTML = '<span class="muted">No data.</span>'; return; }
+  const bd = cf.breakdown || {};
+  const cov = Math.round((bd.changed_module_coverage ?? 0) * 100);
+  const pass = Math.round((bd.passed_results_ratio ?? 0) * 100);
+  el.innerHTML = `
+    <div class="small">Changed-module coverage <b>${cov}%</b></div>
+    <div class="bar-wrap"><div class="bar-fill" style="width:${cov}%"></div></div>
+    <div class="small" style="margin-top:8px">Pass ratio (post-retry) <b>${pass}%</b></div>
+    <div class="bar-wrap"><div class="bar-fill" style="width:${pass}%"></div></div>`;
+}
+
+function renderSelection(sel) {
+  const tb = document.querySelector("#selTable tbody");
+  if (!sel || sel.error) { tb.innerHTML = ""; return; }
+  tb.innerHTML = (sel.selected || []).map(t =>
+    `<tr><td><b>${(t.priority_score||0).toFixed(1)}</b></td><td>${t.test_id}<div class="small muted">${t.node_id}</div></td>` +
+    `<td><span class="pill ${t.test_type === 'smoke' ? 'info' : t.test_type === 'integration' ? 'mut' : ''}">${t.test_type}</span></td>` +
+    `<td class="small muted">${t.rationale}</td></tr>`).join("");
+}
+
+function renderExecution(ex) {
+  const tb = document.querySelector("#execTable tbody");
+  if (!ex || ex.error) { tb.innerHTML = ""; return; }
+  tb.innerHTML = (ex.results || []).map(r =>
+    `<tr><td>${r.node_id.split("::")[0].split("/").pop()}::${r.node_id.split("::")[1]}</td>` +
+    `<td><span class="pill ${r.outcome === 'passed' ? 'pass' : r.outcome === 'skipped' ? 'warn' : 'fail'}">${r.outcome}</span></td>` +
+    `<td>${r.duration_s.toFixed(2)}s</td><td>${r.retried_flag ? "yes" : "-"}</td></tr>`).join("");
+}
+
+function renderFailures(fx) {
+  const el = document.getElementById("failuresCard");
+  if (!fx || fx.error || !fx.failures || !fx.failures.length) {
+    el.textContent = "No failures recorded."; el.className = "muted"; return;
+  }
+  el.className = "";
+  el.innerHTML = `<table><thead><tr><th>Test</th><th>Root cause (preview)</th></tr></thead><tbody>` +
+    fx.failures.map((f, i) => {
+      const rc = f.rca ? f.rca.root_cause : "RCA pending";
+      return `<tr class="clickable" onclick="showRca(${i})"><td>${f.test_id}</td><td class="small muted">${rc.slice(0, 110)}…</td></tr>`;
+    }).join("") + `</tbody></table>`;
+  window._failures = fx.failures;
+}
+
+function showRca(i) {
+  const f = window._failures[i];
+  document.getElementById("rcaTitle").textContent = "RCA · " + f.test_id;
+  const rca = f.rca || {};
+  document.getElementById("rcaBody").innerHTML = `
+    <p><b>Root cause:</b> ${rca.root_cause || "-"} <span class="pill info">conf ${(rca.confidence ?? 0).toFixed(2)}</span></p>
+    <h2>Evidence</h2><pre>${(rca.evidence || []).join("\n")}</pre>
+    <h2>Hypotheses</h2><pre>${(rca.hypotheses || []).join("\n")}</pre>
+    <h2>Rejected</h2><pre>${(rca.rejected_hypotheses || []).join("\n")}</pre>
+    <h2>Recommended actions</h2><pre>${(rca.recommended_actions || []).map(a => "• " + a).join("\n")}</pre>
+    <h2>Stack trace</h2><pre>${f.stack_trace || ""}</pre>`;
+  document.getElementById("rcaDialog").showModal();
+}
+
+function renderConfidence(cf) {
+  const score = cf && !cf.error ? cf.score : null;
+  document.getElementById("confScore").textContent = score == null ? "–" : score.toFixed(1);
+  const arc = document.getElementById("gauge");
+  const val = (score ?? 0) / 100;
+  const angle = -180 + val * 180;
+  const color = score == null ? "#8b949e" : score >= 85 ? "#3fb950" : score >= 60 ? "#d29922" : "#f85149";
+  arc.innerHTML = `
+    <path d="M 14 100 A 46 46 0 0 1 106 100" stroke="#30363d" stroke-width="12" fill="none" stroke-linecap="round"/>
+    <path d="M 14 100 A 46 46 0 0 1 106 100" stroke="${color}" stroke-width="12" fill="none" stroke-linecap="round"
+      stroke-dasharray="144.5" stroke-dashoffset="${144.5 * (1 - val)}"/>
+    <text x="60" y="86" text-anchor="middle" font-size="20" font-weight="700">${score == null ? "–" : score.toFixed(0)}</text>`;
+  const tb = document.querySelector("#confTable tbody");
+  const bd = cf && cf.breakdown ? cf.breakdown : {};
+  const rows = [
+    ["Failed-results deduction", bd.deduction_failed_results],
+    ["Coverage-gap deduction", bd.deduction_coverage_gap],
+    ["Critical-path deduction", bd.deduction_critical_path],
+    ["Unresolved failures", bd.unresolved_failures],
+    ["Flakiness deduction", bd.deduction_flakiness],
+    ["Security deduction", bd.deduction_security],
+  ];
+  tb.innerHTML = rows.map(([l, v]) => `<tr><td class="small muted">${l}</td><td class="small">${v ?? "-"}</td></tr>`).join("");
+}
+
+function renderFlaky(fl) {
+  const tb = document.querySelector("#flakyTable tbody");
+  if (!fl || fl.error || !fl.entries || !fl.entries.length) { tb.innerHTML = `<tr><td colspan="3" class="muted small">none detected</td></tr>`; return; }
+  tb.innerHTML = fl.entries.map(e =>
+    `<tr><td>${e.test_id}</td><td><span class="pill warn">${e.classification}</span></td><td>${e.confidence.toFixed(2)}</td></tr>`).join("");
+}
+
+async function loadTrends() {
+  const { body } = await j(API + "/kpis/history?limit=20");
+  const el = document.getElementById("trendsCard");
+  const points = [];
+  for (const snap of body) {
+    const det = snap.payload && snap.payload.confidence_agreement;
+    points.push(snap.created_at.slice(5, 16));
+  }
+  if (!body.length) { el.textContent = "No KPI snapshots yet — POST /api/v1/kpis/snapshot to record one."; return; }
+  el.textContent = `${body.length} snapshot(s) recorded. Latest registry size: ${body[body.length-1].payload.registry_size}, avg reduction: ${body[body.length-1].payload.suite_reduction.average_reduction_pct ?? "n/a"}%.`;
+}
+
+async function submitOverride(action) {
+  const approver = document.getElementById("approver").value.trim();
+  const justification = document.getElementById("justification").value.trim();
+  const { status, body } = await j(`${API}/gates/${window._gateId}/override`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, approver, justification })
+  });
+  const msg = document.getElementById("overrideMsg");
+  if (status === 200) { msg.textContent = `Override ${action}: workflow now ${body.workflow_state}.`; setTimeout(() => location.reload(), 1200); }
+  else msg.textContent = `Rejected: ${body.detail || status}`;
+}
+window.submitOverride = submitOverride;
+
+const origBanner = renderBanner;
+renderBanner = function(gate) {
+  origBanner(gate);
+  if (gate && gate.gate_id) window._gateId = gate.gate_id;
+};
+
+loadChanges().then(loadLatest);
+setInterval(() => { if (currentChange) loadChange(currentChange); }, 15000);
+</script>
+</body>
+</html>
